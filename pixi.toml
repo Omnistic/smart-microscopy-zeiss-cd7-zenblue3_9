@@ -1,0 +1,11 @@
+[workspace]
+channels = ["conda-forge"]
+name = "smart-microscopy-zeiss-cd7-zenblue3_9"
+platforms = ["win-64"]
+version = "0.1.0"
+
+[tasks]
+start = "python main.py"
+
+[dependencies]
+numpy = ">=2.3.2,<3"
