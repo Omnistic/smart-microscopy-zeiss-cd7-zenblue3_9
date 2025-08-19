@@ -1,4 +1,29 @@
 import os, re, socket
+from aicspylibczi import CziFile
+
+OBJECTIVES_AVAILABLE = {
+    '5x0.35NA': 2,
+    '20x0.7NA': 1,
+    '20x0.95NA': 3,
+    '50x1.2NA': 4
+    }
+
+OPTOVARS_AVAILABLE = {
+    '0.5x': 3,
+    '1x': 2,
+    '2x': 1
+    }
+
+class OverviewTilesSetupError(Exception):
+    pass
+
+def analyze_overview(czi_file_path):
+    overview = CziFile(czi_file_path)
+    metadata = overview.meta
+
+    tile_flag = metadata.find('.//TilesSetup').get("IsActivated")
+    if not tile_flag:
+        raise OverviewTilesSetupError('TilesSetup is False. Only TilesSetup experiment are supported.')
 
 class CD7:
     def __init__(self, tcp_ip, tcp_port=52757, buffer_size=1024):
@@ -64,6 +89,12 @@ class CD7:
 
         self.__encode_macro_from_file('macros/load_sample.py', args)
     
+    def set_magnification(self, objective, optovar):
+        self.__encode_macro_from_file('macros/set_magnification.py', [OBJECTIVES_AVAILABLE[objective], OPTOVARS_AVAILABLE[optovar]])
+
+    def run_experiment(self, experiment):
+        self.__encode_macro_from_file('macros/run_experiment.py', experiment)
+
     def eject_sample(self):
         macro = 'ZenLiveScan.EjectTray()'
 
@@ -86,18 +117,31 @@ if __name__ == '__main__':
         'AutomaticSampleCarrierCalibration': False
     }
 
-    print('Connecting to CD7 LSM ... ', end='', flush=True)
-    cd7_lsm = CD7(tcp_ip, tcp_port, buffer_size)
-    cd7_lsm.print_last_message()
+    # print('Connecting to CD7 LSM ... ', end='', flush=True)
+    # cd7_lsm = CD7(tcp_ip, tcp_port, buffer_size)
+    # cd7_lsm.print_last_message()
 
-    print('Loading sample ... ', end='', flush=True)
-    cd7_lsm.load_sample(sample_configuration)
-    cd7_lsm.print_last_message()
+    # print('Loading sample ... ', end='', flush=True)
+    # cd7_lsm.load_sample(sample_configuration)
+    # cd7_lsm.print_last_message()
 
-    print('Moving to container B2 ... ', end='', flush=True)
-    cd7_lsm.move_to_container('B2')
-    cd7_lsm.print_last_message()
+    # objective = '5x0.35NA'
+    # optovar = '1x'
+    # print('Setting magnification: {} | {} ... '.format(objective, optovar), end='', flush=True)
+    # cd7_lsm.set_magnification(objective, optovar)
+    # cd7_lsm.print_last_message()
 
-    print('Ejecting sample ... ', end='', flush=True)
-    cd7_lsm.eject_sample()
-    cd7_lsm.print_last_message()
+    # experiment = 'smart_overview'
+    # print('Running experiment: {} ... '.format(experiment), end='', flush=True)
+    # cd7_lsm.run_experiment(experiment)
+    # cd7_lsm.print_last_message()
+
+    analyze_overview('overview-01.czi')
+
+    # print('Moving to container B2 ... ', end='', flush=True)
+    # cd7_lsm.move_to_container('B2')
+    # cd7_lsm.print_last_message()
+
+    # print('Ejecting sample ... ', end='', flush=True)
+    # cd7_lsm.eject_sample()
+    # cd7_lsm.print_last_message()

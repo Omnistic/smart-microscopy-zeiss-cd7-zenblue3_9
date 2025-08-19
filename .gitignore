@@ -1,3 +1,6 @@
+# ZEISS CZI files
+*.czi
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
