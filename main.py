@@ -1,4 +1,7 @@
 import os, re, socket
+import napari
+import numpy as np
+import pandas as pd
 from aicspylibczi import CziFile
 
 TCP_IP = os.environ.get('CD7_IP', 'localhost')
@@ -28,10 +31,20 @@ SAMPLE_CONFIGURATION = {
     'AutomaticSampleCarrierCalibration': False
 }
 
+COLORS = {
+    'orange': '#E69F00',
+    'blue': '#56B4E9',
+    'green': '#009E73',
+    'yellow': '#F0E442',
+    'dark-blue': '#0072B2',
+    'dark-orange': '#D55E00',
+    'pink': '#CC79A7'
+}
+
 class OverviewTilesSetupError(Exception):
     pass
 
-def acquire_overview(tcp_ip):
+def acquire_overview(tcp_ip, objective, optovar):
     print('Connecting to CD7 LSM ... ', end='', flush=True)
     cd7_lsm = CD7(tcp_ip)
     cd7_lsm.print_last_message()
@@ -40,8 +53,6 @@ def acquire_overview(tcp_ip):
     cd7_lsm.load_sample(SAMPLE_CONFIGURATION)
     cd7_lsm.print_last_message()
 
-    objective = '5x0.35NA'
-    optovar = '1x'
     print('Setting magnification: {} | {} ... '.format(objective, optovar), end='', flush=True)
     cd7_lsm.set_magnification(objective, optovar)
     cd7_lsm.print_last_message()
@@ -57,9 +68,45 @@ def analyze_overview(czi_file_path):
     overview = CziFile(czi_file_path)
     metadata = overview.meta
 
-    tile_flag = metadata.find('.//TilesSetup').get("IsActivated")
+    tile_flag = metadata.find('.//TilesSetup').get('IsActivated')
     if not tile_flag:
         raise OverviewTilesSetupError('TilesSetup is False. Only TilesSetup experiment are supported.')
+    
+    overview_summary = []
+    tile_regions = metadata.findall('.//TileRegion')
+    for tile_region in tile_regions:
+        tile_name = tile_region.get('Name')
+        tile_center = np.array(tile_region.find('CenterPosition').text.split(','), dtype=float)
+        tile_cols = int(tile_region.find('Columns').text)
+        tile_rows = int(tile_region.find('Rows').text)
+        overview_summary.append({
+            'TileName': tile_name,
+            'TileCenterX': tile_center[0],
+            'TileCenterY': tile_center[1],
+            'TileCols': tile_cols,
+            'TileRows': tile_rows
+        })
+
+    overview_summary = pd.DataFrame(overview_summary)
+    print(overview_summary)
+
+    test_img, _ = overview.read_image(S=0, M=0)
+    test_img = np.squeeze(test_img)
+
+    viewer = napari.Viewer()
+    image_layer = viewer.add_image(test_img)
+    points_layer = viewer.add_points(
+        size=99,
+        face_color=[1, 1, 1, 0.5],
+        border_color=COLORS['orange'],
+        border_width=10,
+        border_width_is_relative=False
+    )
+    points_layer.mode = 'add'
+    napari.run()
+
+    target = points_layer.data[0]
+    print(target)
 
 class CD7:
     def __init__(self, tcp_ip, tcp_port=52757, buffer_size=1024):
@@ -138,8 +185,11 @@ class CD7:
         self.__encode_macro_from_str(macro)
 
 if __name__ == '__main__':
-    # acquire_overview(TCP_IP)
+    objective = '5x0.35NA'
+    optovar = '1x'
+    # acquire_overview(TCP_IP, objective, optovar)
 
+    magnification = float(objective.split('x')[0]) * float(optovar[:-1])
     analyze_overview('overview-01.czi')
 
 
