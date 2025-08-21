@@ -2,7 +2,7 @@ import os, re, socket
 import napari
 import numpy as np
 import pandas as pd
-from aicspylibczi import CziFile
+from bioio import BioImage
 
 TCP_IP = os.environ.get('CD7_IP', 'localhost')
 
@@ -21,7 +21,7 @@ OPTOVARS_AVAILABLE = {
 
 SAMPLE_CONFIGURATION = {
     'SampleCarrierTypeTemplate': 'Multiwell 96.czsht',
-    'MeasureBottomThickness': False,
+    'MeasureBottomThickness': True,
     'DetermineBottonMaterial': False,
     'SampleCarrierDetection': False,
     'CreateCarrierOverview': False,
@@ -65,8 +65,8 @@ def acquire_overview(tcp_ip, objective, optovar):
     cd7_lsm.Close()
 
 def analyze_overview(czi_file_path):
-    overview = CziFile(czi_file_path)
-    metadata = overview.meta
+    overview = BioImage(czi_file_path, use_aicspylibczi=True)
+    metadata = overview.metadata
 
     tile_flag = metadata.find('.//TilesSetup').get('IsActivated')
     if not tile_flag:
@@ -88,13 +88,24 @@ def analyze_overview(czi_file_path):
         })
 
     overview_summary = pd.DataFrame(overview_summary)
-    print(overview_summary)
 
-    test_img, _ = overview.read_image(S=0, M=0)
-    test_img = np.squeeze(test_img)
+    # IMPORTANT: the large dimension keeps alternating between scenes
+    # and it seems to be coming from the microscope itself (I tried splitting
+    # the scenes in ZEN 3.9 and the large dimension was also alternating).
+    # If the first scene dimension is (5715, 7782), the second scene will be
+    # (5715, 7783), the third (5715, 7782) and so on. I will padd with zeros
+    # for now...
+    overview_stack = np.zeros((len(overview.scenes), 5715, 7783))
+    for ii in range(len(overview.scenes)):
+        overview.set_scene(ii)
+        try:
+            overview_stack[ii, :, :] = overview.get_image_data('YX')
+        except:
+            overview_stack[ii, :, :-1] = overview.get_image_data('YX')
+    # END OF DIRTY STUFF HERE
 
     viewer = napari.Viewer()
-    image_layer = viewer.add_image(test_img)
+    image_layer = viewer.add_image(overview_stack[0, :, :])
     points_layer = viewer.add_points(
         size=99,
         face_color=[1, 1, 1, 0.5],
@@ -105,8 +116,8 @@ def analyze_overview(czi_file_path):
     points_layer.mode = 'add'
     napari.run()
 
-    target = points_layer.data[0]
-    print(target)
+    targets = points_layer.data
+    print(targets)
 
 class CD7:
     def __init__(self, tcp_ip, tcp_port=52757, buffer_size=1024):
@@ -190,14 +201,7 @@ if __name__ == '__main__':
     # acquire_overview(TCP_IP, objective, optovar)
 
     magnification = float(objective.split('x')[0]) * float(optovar[:-1])
-    analyze_overview('overview-01.czi')
-
-
-
-
-
-
-
+    analyze_overview('overview_2_tiles.czi')
 
 
 
