@@ -19,6 +19,8 @@ OPTOVARS_AVAILABLE = {
     '2x': 1
     }
 
+PHYSICAL_PIXEL_SIZE_UM = 3.45
+
 SAMPLE_CONFIGURATION = {
     'SampleCarrierTypeTemplate': 'Multiwell 96.czsht',
     'MeasureBottomThickness': True,
@@ -59,12 +61,12 @@ def acquire_overview(tcp_ip, objective, optovar):
 
     experiment = 'smart_overview'
     print('Running experiment: {} ... '.format(experiment), end='', flush=True)
-    cd7_lsm.run_experiment(experiment)
+    cd7_lsm.run_experiment(experiment, type='overview')
     cd7_lsm.print_last_message()
 
     cd7_lsm.Close()
 
-def analyze_overview(czi_file_path):
+def analyze_overview(czi_file_path, magnification):
     overview = BioImage(czi_file_path, use_aicspylibczi=True)
     metadata = overview.metadata
 
@@ -95,6 +97,10 @@ def analyze_overview(czi_file_path):
     # If the first scene dimension is (5715, 7782), the second scene will be
     # (5715, 7783), the third (5715, 7782) and so on. I will padd with zeros
     # for now...
+    #
+    # https://forum.image.sc/t/alternating-scene-sizes-from-zeiss-cd7-zen-blue-3-9/115989
+    #
+    # DIRTY STUFF HERE
     overview_stack = np.zeros((len(overview.scenes), 5715, 7783))
     for ii in range(len(overview.scenes)):
         overview.set_scene(ii)
@@ -104,8 +110,15 @@ def analyze_overview(czi_file_path):
             overview_stack[ii, :, :-1] = overview.get_image_data('YX')
     # END OF DIRTY STUFF HERE
 
+    # Test with first scene
+    scene_of_interest = 1
+    scene_center_um = overview_summary.loc[scene_of_interest, ['TileCenterY', 'TileCenterX']].values
+    pixel_size_um = PHYSICAL_PIXEL_SIZE_UM / magnification
+    scene_size_px = np.array(overview_stack[0, :, :].shape)
+    scene_center_px = np.array((scene_size_px-1) / 2, dtype=int)
+
     viewer = napari.Viewer()
-    image_layer = viewer.add_image(overview_stack[0, :, :])
+    image_layer = viewer.add_image(overview_stack[scene_of_interest, :, :])
     points_layer = viewer.add_points(
         size=99,
         face_color=[1, 1, 1, 0.5],
@@ -116,8 +129,35 @@ def analyze_overview(czi_file_path):
     points_layer.mode = 'add'
     napari.run()
 
-    targets = points_layer.data
-    print(targets)
+    # Pixel coordinates within a scene where (0, 0) is the top-left corner
+    target_local_screen_px = points_layer.data[0]
+    # Pixel coordinates within a scene where (0, 0) is the center of the scene
+    target_local_cartesian_px = target_local_screen_px - scene_center_px
+    # Um coordinates within a scene where (0, 0) is the center of the scene
+    target_local_cartesian_um = target_local_cartesian_px * pixel_size_um
+    # Um coordinates within the template
+    target_template_um = scene_center_um + target_local_cartesian_um
+
+    # Um coordinates within the template in 'XY' order
+    target_template_um = target_template_um[::-1]
+
+    return target_template_um
+
+def acquire_detail(tcp_ip, objective, optovar, target):
+    print('Connecting to CD7 LSM ... ', end='', flush=True)
+    cd7_lsm = CD7(tcp_ip)
+    cd7_lsm.print_last_message()
+
+    print('Setting magnification: {} | {} ... '.format(objective, optovar), end='', flush=True)
+    cd7_lsm.set_magnification(objective, optovar)
+    cd7_lsm.print_last_message()
+
+    experiment = 'smart_detail'
+    print('Running experiment: {} ... '.format(experiment), end='', flush=True)
+    cd7_lsm.run_experiment(experiment, type='detail', target=target)
+    cd7_lsm.print_last_message()
+
+    cd7_lsm.Close()
 
 class CD7:
     def __init__(self, tcp_ip, tcp_port=52757, buffer_size=1024):
@@ -187,8 +227,13 @@ class CD7:
     def set_magnification(self, objective, optovar):
         self.__encode_macro_from_file('macros/set_magnification.py', [OBJECTIVES_AVAILABLE[objective], OPTOVARS_AVAILABLE[optovar]])
 
-    def run_experiment(self, experiment):
-        self.__encode_macro_from_file('macros/run_experiment.py', experiment)
+    def run_experiment(self, experiment, type, target=None):
+        match type:
+            case 'overview':
+                self.__encode_macro_from_file('macros/run_overview.py', experiment)
+            case 'detail':
+                target_x, target_y, target_z = target
+                self.__encode_macro_from_file('macros/run_detail.py', [experiment, target_x, target_y, target_z])
 
     def eject_sample(self):
         macro = 'ZenLiveScan.EjectTray()'
@@ -196,12 +241,27 @@ class CD7:
         self.__encode_macro_from_str(macro)
 
 if __name__ == '__main__':
-    objective = '5x0.35NA'
-    optovar = '1x'
-    # acquire_overview(TCP_IP, objective, optovar)
+    overview_objective = '5x0.35NA'
+    overview_optovar = '1x'
+    detail_objective = '20x0.95NA'
+    detail_optovar = '2x'
 
-    magnification = float(objective.split('x')[0]) * float(optovar[:-1])
-    analyze_overview('overview_2_tiles.czi')
+    # print(' === Overview Acquisition === ')
+    # acquire_overview(TCP_IP, overview_objective, overview_optovar)
+
+    print(' === Overview Analysis === ')
+    magnification = float(overview_objective.split('x')[0]) * float(overview_optovar[:-1])
+    target = analyze_overview('overview_2_scenes.czi', magnification)
+    print(target)
+
+    print(' === Detail Acquisition === ')
+    safe_z = 2100.00
+    target_x, target_y = target
+
+    target = np.array([target_x, target_y, safe_z])
+
+    acquire_detail(TCP_IP, detail_objective, detail_optovar, target)
+
 
 
 
