@@ -157,6 +157,10 @@ def acquire_detail(tcp_ip, objective, optovar, target):
     cd7_lsm.run_experiment(experiment, type='detail', target=target)
     cd7_lsm.print_last_message()
 
+    print('Ejecting sample ... ', end='', flush=True)
+    cd7_lsm.eject_sample()
+    cd7_lsm.print_last_message()
+
     cd7_lsm.Close()
 
 class CD7:
@@ -246,8 +250,8 @@ if __name__ == '__main__':
     detail_objective = '20x0.95NA'
     detail_optovar = '2x'
 
-    # print(' === Overview Acquisition === ')
-    # acquire_overview(TCP_IP, overview_objective, overview_optovar)
+    print(' === Overview Acquisition === ')
+    acquire_overview(TCP_IP, overview_objective, overview_optovar)
 
     print(' === Overview Analysis === ')
     magnification = float(overview_objective.split('x')[0]) * float(overview_optovar[:-1])
@@ -261,16 +265,3 @@ if __name__ == '__main__':
     target = np.array([target_x, target_y, safe_z])
 
     acquire_detail(TCP_IP, detail_objective, detail_optovar, target)
-
-
-
-
-
-
-    # print('Moving to container B2 ... ', end='', flush=True)
-    # cd7_lsm.move_to_container('B2')
-    # cd7_lsm.print_last_message()
-
-    # print('Ejecting sample ... ', end='', flush=True)
-    # cd7_lsm.eject_sample()
-    # cd7_lsm.print_last_message()
